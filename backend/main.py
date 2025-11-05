@@ -1,6 +1,7 @@
 from fastapi import FastAPI, File, UploadFile, Form
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 import os, shutil, time
 
 from .algorithms import lsb, lsb_matching, dct, dwt, dwt_dct_hybrid
@@ -8,13 +9,26 @@ from .metrics import get_metrics
 
 app = FastAPI(title="Steganography API")
 
+allow_origins = [
+    "http://127.0.0.1:5500",
+    "http://localhost:5500",
+]
+
+
 app.add_middleware(
     CORSMiddleware,
+    # allow_origins=allow_origins,
     allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Make sure directory exists
+os.makedirs("results/outputs", exist_ok=True)
+
+# Serve static files from the outputs folder
+app.mount("/download", StaticFiles(directory="results/outputs"), name="download")
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_DIR = os.path.join(ROOT, "..", "results", "uploads")
