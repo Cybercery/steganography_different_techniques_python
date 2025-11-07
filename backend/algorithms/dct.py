@@ -1,10 +1,11 @@
 import cv2
 import numpy as np
 
-HEADER_BITS = 32
-STRENGTH = 4  # Embedding strength (how much to modify coefficients)
+HEADER_BITS = 32  # 32-bit header stores payload length in BITS
+STRENGTH = 4  # Embedding strength: larger => more robust but larger distortion
 
-# mid-band mask (avoid DC & very high freq)
+# 8x8 mid-band mask: choose coefficients that are not DC (0,0) and not extreme high-freq.
+# This is a common mid-band selection for 8x8 DCT steganography.
 MID_MASK = np.array([
     [0,0,0,0,0,0,0,0],
     [0,0,1,1,1,0,0,0],
@@ -17,9 +18,11 @@ MID_MASK = np.array([
 ], dtype=np.uint8)
 
 def _str_to_bits(s):
+    # Convert a Python string to list of bits
     return [int(x) for x in ''.join(format(ord(c),'08b') for c in s)]
 
 def _bits_to_str(bits):
+    # Convert list of bits back to string. Stops on incomplete trailing byte.
     out = []
     for i in range(0, len(bits), 8):
         b = bits[i:i+8]
@@ -27,21 +30,28 @@ def _bits_to_str(bits):
         out.append(chr(int(''.join(map(str,b)),2)))
     return ''.join(out)
 
-def _int_to_bits32(n): return [int(x) for x in format(n,'032b')]
+def _int_to_bits32(n): 
+    # Represent integer n as 32-bit list (MSB first).
+    return [int(x) for x in format(n,'032b')]
 def _bits32_to_int(bits): return int(''.join(map(str,bits[:32])),2)
 
 def embed_message(cover_image_path, message, output_path, strength=STRENGTH):
+    # Read the image (BGR). We use IMREAD_COLOR to ensure 3 channels.
     img = cv2.imread(cover_image_path, cv2.IMREAD_COLOR)
     if img is None: raise ValueError("Could not read cover image.")
+    # Convert to YCrCb and operate on Y (luma) channel only.
     YCrCb = cv2.cvtColor(img, cv2.COLOR_BGR2YCrCb)
     Y = YCrCb[:,:,0].astype(np.float32)
 
+    #Build bit payload: 32-bit header + message bits
     bits = _str_to_bits(message)
     header = _int_to_bits32(len(bits))
-    payload = header + bits
+    payload = header + bits #list of 0/1
     
     H, W = Y.shape
+    # Crop to nearest multiple of 8
     H8, W8 = H - (H % 8), W - (W % 8)
+    # total available slots
     total_slots = ((H8//8)*(W8//8)) * int(MID_MASK.sum())
     
     if len(payload) > total_slots:
@@ -50,8 +60,10 @@ def embed_message(cover_image_path, message, output_path, strength=STRENGTH):
     bit_idx = 0
     Y2 = Y.copy()
     
+    # Process each 8x8 block
     for i in range(0, H8, 8):
         for j in range(0, W8, 8):
+            # Extract 8x8 block and apply DCT
             block = Y[i:i+8, j:j+8].astype(np.float32) - 128.0
             dct = cv2.dct(block)
             
